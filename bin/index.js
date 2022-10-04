@@ -13,6 +13,8 @@ const { readFile, writeFile, readdir } = require("fs").promises;
 const mergeImages = require('merge-images');
 const { Image, Canvas } = require('canvas');
 const ImageDataURI = require('image-data-uri');
+const JSONdb = require('simple-json-db');
+const sizeOf = require('image-size');
 
 //SETTINGS
 let basePath;
@@ -46,35 +48,18 @@ const sleep = seconds => new Promise(resolve => setTimeout(resolve, seconds * 10
 
 //OPENING
 console.log(
-  boxen(
-    chalk.blue(
-      ' /$$   /$$ /$$$$$$$$ /$$$$$$$$        /$$$$$$  /$$$$$$$  /$$$$$$$$        /$$$$$$  /$$$$$$$$ /$$   /$$ /$$$$$$$$ /$$$$$$$   /$$$$$$  /$$$$$$$$ /$$$$$$  /$$$$$$$ \n' +
-        '| $$$ | $$| $$_____/|__  $$__/       /$$__  $$| $$__  $$|__  $$__/       /$$__  $$| $$_____/| $$$ | $$| $$_____/| $$__  $$ /$$__  $$|__  $$__//$$__  $$| $$__  $$\n' +
-        '| $$$$| $$| $$         | $$         | $$  \\ $$| $$  \\ $$   | $$         | $$  \\__/| $$      | $$$$| $$| $$      | $$  \\ $$| $$  \\ $$   | $$  | $$  \\ $$| $$  \\ $$\n' +
-        '| $$ $$ $$| $$$$$      | $$         | $$$$$$$$| $$$$$$$/   | $$         | $$ /$$$$| $$$$$   | $$ $$ $$| $$$$$   | $$$$$$$/| $$$$$$$$   | $$  | $$  | $$| $$$$$$$/\n' +
-        '| $$  $$$$| $$__/      | $$         | $$__  $$| $$__  $$   | $$         | $$|_  $$| $$__/   | $$  $$$$| $$__/   | $$__  $$| $$__  $$   | $$  | $$  | $$| $$__  $$\n' +
-        '| $$\\  $$$| $$         | $$         | $$  | $$| $$  \\ $$   | $$         | $$  \\ $$| $$      | $$\\  $$$| $$      | $$  \\ $$| $$  | $$   | $$  | $$  | $$| $$  \\ $$\n' +
-        '| $$ \\  $$| $$         | $$         | $$  | $$| $$  | $$   | $$         |  $$$$$$/| $$$$$$$$| $$ \\  $$| $$$$$$$$| $$  | $$| $$  | $$   | $$  |  $$$$$$/| $$  | $$\n' +
-        '|__/  \\__/|__/         |__/         |__/  |__/|__/  |__/   |__/          \\______/ |________/|__/  \\__/|________/|__/  |__/|__/  |__/   |__/   \\______/ |__/  |__/\n \n' +
-        'Made with '
-    ) +
-      chalk.red('❤') +
-      chalk.blue(' by NotLuksus'),
-    { borderColor: 'red', padding: 3 }
-  )
+	boxen(chalk.blue('MODDED by Cayden'), { borderColor: 'red', padding: 1 })
 );
 
 main();
 
 async function main() {
   if(argv['load-config']){
-    let file = argv['load-config'];
-  
-    await loadConfig(file);
+    await loadConfig(argv['load-config']);
     loadedConfig = true;
   }
+  
 
-  await loadConfig("config.json");
   await getBasePath();
   await getOutputPath();
   await checkForDuplicates();
@@ -372,36 +357,59 @@ async function generateWeightedTraits() {
 //GENARATE IMAGES
 async function generateImages() {
   let noMoreMatches = 0;
-  let images = [];
+  let images = watermark_images = [];
   let id = 0;
+  let watermark_max_size = 3000; // 3000 is the largest resolution watermark image that we have.
+  
   await generateWeightedTraits();
+  
   if (config.deleteDuplicates) {
     while (!Object.values(weightedTraits).filter(arr => arr.length == 0).length && noMoreMatches < 20000) {
-      let picked = [];
-      order.forEach(id => {
-        let pickedImgId = pickRandom(weightedTraits[id]);
-        picked.push(pickedImgId);
-        let pickedImg = weightedTraits[id][pickedImgId];
-        images.push(basePath + traits[id] + '/' + pickedImg);
-      });
+		let picked = [];
+		order.forEach(id => {
+			let pickedImgId = pickRandom(weightedTraits[id]);
+			picked.push(pickedImgId);
+			let pickedImg = weightedTraits[id][pickedImgId];
+			images.push(basePath + traits[id] + '/' + pickedImg);
+			watermark_images = images; // custom added by cayden.
+		});
 
-      if (existCombination(images)) {
-        noMoreMatches++;
-        images = [];
-      } else {
-        generateMetadataObject(id, images);
-        noMoreMatches = 0;
-        order.forEach((id, i) => {
-          remove(weightedTraits[id], picked[i]);
-        });
-        seen.push(images);
-        const b64 = await mergeImages(images, { Canvas: Canvas, Image: Image });
-        await ImageDataURI.outputFile(b64, outputPath + `${id}.png`);
-        images = [];
-        id++;
-      }
-    }
-  } else {
+		// add in watermark
+		if(argv['watermark']){
+			let dimensions = sizeOf(images[0]);
+			let watermark_size = Math.floor(dimensions.width / 100) * 100;
+			watermark_size = watermark_size <= watermark_max_size ? watermark_size : watermark_max_size;
+			watermark_images.push(config.watermarkPath + watermark_size + '.png');
+		}
+
+		if(existCombination(images)){
+			noMoreMatches++;
+			images = watermark_images = [];
+		} 
+		else{
+
+			if(seen.length < argv['total']){ // added by cayden
+				generateMetadataObject(id, images);
+				noMoreMatches = 0;
+				order.forEach((id, i) => {
+					remove(weightedTraits[id], picked[i]);
+				});
+				seen.push(images);
+				
+				const b64 = await mergeImages(watermark_images, { Canvas: Canvas, Image: Image });
+				await ImageDataURI.outputFile(b64, outputPath + `${id}.png`);
+				images = watermark_images = [];
+				id++;
+			}
+			else{
+				break;
+			}
+		}
+		
+	}
+	
+  } 
+  else {
     while (!Object.values(weightedTraits).filter(arr => arr.length == 0).length) {
       order.forEach(id => {
         images.push(
