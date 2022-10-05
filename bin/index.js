@@ -13,7 +13,6 @@ const { readFile, writeFile, readdir } = require("fs").promises;
 const mergeImages = require('merge-images');
 const { Image, Canvas } = require('canvas');
 const ImageDataURI = require('image-data-uri');
-const JSONdb = require('simple-json-db');
 const sizeOf = require('image-size');
 
 //SETTINGS
@@ -375,7 +374,7 @@ async function generateImages() {
 		});
 
 		// add in watermark
-		if(argv['watermark']){
+		if(argv['watermark'] == '1'){
 			let dimensions = sizeOf(images[0]);
 			let watermark_size = Math.floor(dimensions.width / 100) * 100;
 			watermark_size = watermark_size <= watermark_max_size ? watermark_size : watermark_max_size;
@@ -407,7 +406,6 @@ async function generateImages() {
 		}
 		
 	}
-	
   } 
   else {
     while (!Object.values(weightedTraits).filter(arr => arr.length == 0).length) {
